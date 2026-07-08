@@ -33,7 +33,7 @@ using namespace std;
 void *main_thread(void *) {
     do { sleep(1); } while (!isLibraryLoaded(libName));
 
-    float MultiplyValue = 1.5;
+    float MultiplyValue = 1.7;
 	Utils::WriteMemory<float>(getAbsoluteAddress(libName, HEAD), 0.15f * MultiplyValue);
 	Utils::WriteMemory<float>(getAbsoluteAddress(libName, TORSO_1), 0.2f * MultiplyValue);
 	Utils::WriteMemory<float>(getAbsoluteAddress(libName, TORSO_2), 0.2f * MultiplyValue);
