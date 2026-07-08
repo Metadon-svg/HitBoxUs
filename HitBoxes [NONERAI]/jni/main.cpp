@@ -33,12 +33,12 @@ using namespace std;
 void *main_thread(void *) {
     do { sleep(1); } while (!isLibraryLoaded(libName));
 
-    float MultiplyValue = 6;
+    float MultiplyValue = 2;
 	Utils::WriteMemory<float>(getAbsoluteAddress(libName, HEAD), 0.15f * MultiplyValue);
 	Utils::WriteMemory<float>(getAbsoluteAddress(libName, TORSO_1), 0.2f * MultiplyValue);
-	Utils::WriteMemory<float>(getAbsoluteAddress(libName, TORSO_2), 0.25f * MultiplyValue);
-	Utils::WriteMemory<float>(getAbsoluteAddress(libName, MID), 0.25f * MultiplyValue);
-	Utils::WriteMemory<float>(getAbsoluteAddress(libName, LEFTARM), 0.25f * MultiplyValue);
+	Utils::WriteMemory<float>(getAbsoluteAddress(libName, TORSO_2), 0.2f * MultiplyValue);
+	Utils::WriteMemory<float>(getAbsoluteAddress(libName, MID), 0.2f * MultiplyValue);
+	Utils::WriteMemory<float>(getAbsoluteAddress(libName, LEFTARM), 0.16f * MultiplyValue);
 	Utils::WriteMemory<float>(getAbsoluteAddress(libName, RIGHTARM), 0.16f * MultiplyValue);
 	Utils::WriteMemory<float>(getAbsoluteAddress(libName, LEFTLEG_1), 0.15f * MultiplyValue);
 	Utils::WriteMemory<float>(getAbsoluteAddress(libName, RIGHTLEG_1), 0.15f * MultiplyValue);
