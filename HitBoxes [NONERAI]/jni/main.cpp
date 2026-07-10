@@ -1,6 +1,6 @@
 #include <iostream>
-#include <cstdio>       // Для fopen, fscanf, fclose (работает без кэша)
-#include <unistd.h>     // Для usleep
+#include <cstdio>
+#include <unistd.h> // Для usleep
 
 using namespace std;
 
@@ -33,9 +33,10 @@ using namespace std;
 
 #define libName "libblackrussia-client.so"
 
-// Надежное чтение напрямую с диска
+// Путь во внутреннюю папку игры для стабильного чтения
+const char* filePath = "/storage/emulated/0/Android/data/com.br.top/files/Hitbox_Size.txt";
+
 float GetHitboxSize() {
-    const char* filePath = "/storage/emulated/0/CONFIGHITBOX/Hitbox_Size.txt";
     float size = 1.0f; 
     
     FILE* file = fopen(filePath, "r");
@@ -43,7 +44,6 @@ float GetHitboxSize() {
         fscanf(file, "%f", &size);
         fclose(file);
     }
-    
     return size;
 }
 
@@ -51,35 +51,40 @@ void *main_thread(void *) {
     // Ждем загрузки либки игры
     do { sleep(1); } while (!isLibraryLoaded(libName));
 
-    // ИСПРАВЛЕНИЕ: Получаем базовый адрес ОДИН раз при старте
+    // Получаем базовый адрес ОДИН раз, чтобы не грузить проц в цикле
     uintptr_t libBase = getAbsoluteAddress(libName, 0);
     
-    // Переменная для отслеживания изменений в файле
     float lastValue = -1.0f; 
+    int frameCounter = 0;
 
     while (true) {
-        // Читаем актуальное значение из txt файла
-        float MultiplyValue = GetHitboxSize();
+        // Проверяем файл строго каждые 8 кадров
+        if (frameCounter >= 8) {
+            float MultiplyValue = GetHitboxSize();
 
-        // Если значение изменилось — только тогда обновляем память игры
-        if (MultiplyValue != lastValue) {
-            Utils::WriteMemory<float>(libBase + HEAD, 0.15f * MultiplyValue);
-            Utils::WriteMemory<float>(libBase + TORSO_1, 0.2f * MultiplyValue);
-            Utils::WriteMemory<float>(libBase + TORSO_2, 0.25f * MultiplyValue);
-            Utils::WriteMemory<float>(libBase + MID, 0.25f * MultiplyValue);
-            Utils::WriteMemory<float>(libBase + LEFTARM, 0.25f * MultiplyValue);
-            Utils::WriteMemory<float>(libBase + RIGHTARM, 0.16f * MultiplyValue);
-            Utils::WriteMemory<float>(libBase + LEFTLEG_1, 0.15f * MultiplyValue);
-            Utils::WriteMemory<float>(libBase + RIGHTLEG_1, 0.15f * MultiplyValue);
-            Utils::WriteMemory<float>(libBase + LEFTLEG_2, 0.15f * MultiplyValue);
-            Utils::WriteMemory<float>(libBase + RIGHTLEG_2, 0.15f * MultiplyValue);
+            // Если значение в файле изменилось — обновляем адреса игры
+            if (MultiplyValue != lastValue) {
+                Utils::WriteMemory<float>(libBase + HEAD, 0.15f * MultiplyValue);
+                Utils::WriteMemory<float>(libBase + TORSO_1, 0.2f * MultiplyValue);
+                Utils::WriteMemory<float>(libBase + TORSO_2, 0.25f * MultiplyValue);
+                Utils::WriteMemory<float>(libBase + MID, 0.25f * MultiplyValue);
+                Utils::WriteMemory<float>(libBase + LEFTARM, 0.25f * MultiplyValue);
+                Utils::WriteMemory<float>(libBase + RIGHTARM, 0.16f * MultiplyValue);
+                Utils::WriteMemory<float>(libBase + LEFTLEG_1, 0.15f * MultiplyValue);
+                Utils::WriteMemory<float>(libBase + RIGHTLEG_1, 0.15f * MultiplyValue);
+                Utils::WriteMemory<float>(libBase + LEFTLEG_2, 0.15f * MultiplyValue);
+                Utils::WriteMemory<float>(libBase + RIGHTLEG_2, 0.15f * MultiplyValue);
+                
+                lastValue = MultiplyValue; 
+            }
             
-            // Запоминаем новое значение
-            lastValue = MultiplyValue; 
+            frameCounter = 0; // Сбрасываем счетчик
         }
 
-        // Проверяем файл каждые 500 миллисекунд (полсекунды)
-        usleep(500000); 
+        frameCounter++;
+
+        // Задержка ~16.6 миллисекунд (симуляция 60 кадров в секунду)
+        usleep(16666); 
     }
 
     return nullptr;
