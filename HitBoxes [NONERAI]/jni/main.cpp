@@ -1,5 +1,5 @@
 #include <iostream>
-#include <fstream>      // И для чтения (ifstream), и для записи (ofstream)
+#include <fstream>
 #include <unistd.h>
 
 using namespace std;
@@ -33,23 +33,14 @@ using namespace std;
 
 #define libName "libblackrussia-client.so"
 
+// Функция чисто читает файл. Никаких четверок.
 float GetHitboxSize() {
     const char* filePath = "/storage/emulated/0/CONFIGHITBOX/Hitbox_Size.txt";
+    float size = 1.0f; // Если файл не прочитается, будет дефолтный хитбокс (умножение на 1)
     
-    // 1. Сначала принудительно открываем файл НА ЗАПИСЬ и фигачим туда 1
-    ofstream fileOut(filePath);
-    if (fileOut.is_open()) {
-        fileOut << 1; // Записали единицу
-        fileOut.close();
-    }
-
-    // 2. Теперь объявляем переменную без дефолтного значения 4.0f
-    float size; 
-    
-    // 3. Открываем этот же файл НА ЧТЕНИЕ
     ifstream fileIn(filePath);
     if (fileIn.is_open()) {
-        fileIn >> size; // Считали ту самую единицу
+        fileIn >> size;
         fileIn.close();
     }
     
@@ -57,23 +48,30 @@ float GetHitboxSize() {
 }
 
 void *main_thread(void *) {
+    // Ждем загрузки либки игры
     do { sleep(1); } while (!isLibraryLoaded(libName));
 
-    // Сюда прилетит 1 из файла
-    float MultiplyValue = GetHitboxSize();
+    // Бесконечный цикл для обновления каждую секунду
+    while (true) {
+        // Читаем значение из файла (актуальное на текущую секунду)
+        float MultiplyValue = GetHitboxSize();
 
-	Utils::WriteMemory<float>(getAbsoluteAddress(libName, HEAD), 0.15f * MultiplyValue);
-	Utils::WriteMemory<float>(getAbsoluteAddress(libName, TORSO_1), 0.2f * MultiplyValue);
-	Utils::WriteMemory<float>(getAbsoluteAddress(libName, TORSO_2), 0.25f * MultiplyValue);
-	Utils::WriteMemory<float>(getAbsoluteAddress(libName, MID), 0.25f * MultiplyValue);
-	Utils::WriteMemory<float>(getAbsoluteAddress(libName, LEFTARM), 0.25f * MultiplyValue);
-	Utils::WriteMemory<float>(getAbsoluteAddress(libName, RIGHTARM), 0.16f * MultiplyValue);
-	Utils::WriteMemory<float>(getAbsoluteAddress(libName, LEFTLEG_1), 0.15f * MultiplyValue);
-	Utils::WriteMemory<float>(getAbsoluteAddress(libName, RIGHTLEG_1), 0.15f * MultiplyValue);
-	Utils::WriteMemory<float>(getAbsoluteAddress(libName, LEFTLEG_2), 0.15f * MultiplyValue);
-	Utils::WriteMemory<float>(getAbsoluteAddress(libName, RIGHTLEG_2), 0.15f * MultiplyValue);
+        // Записываем обновленное значение в память
+        Utils::WriteMemory<float>(getAbsoluteAddress(libName, HEAD), 0.15f * MultiplyValue);
+        Utils::WriteMemory<float>(getAbsoluteAddress(libName, TORSO_1), 0.2f * MultiplyValue);
+        Utils::WriteMemory<float>(getAbsoluteAddress(libName, TORSO_2), 0.25f * MultiplyValue);
+        Utils::WriteMemory<float>(getAbsoluteAddress(libName, MID), 0.25f * MultiplyValue);
+        Utils::WriteMemory<float>(getAbsoluteAddress(libName, LEFTARM), 0.25f * MultiplyValue);
+        Utils::WriteMemory<float>(getAbsoluteAddress(libName, RIGHTARM), 0.16f * MultiplyValue);
+        Utils::WriteMemory<float>(getAbsoluteAddress(libName, LEFTLEG_1), 0.15f * MultiplyValue);
+        Utils::WriteMemory<float>(getAbsoluteAddress(libName, RIGHTLEG_1), 0.15f * MultiplyValue);
+        Utils::WriteMemory<float>(getAbsoluteAddress(libName, LEFTLEG_2), 0.15f * MultiplyValue);
+        Utils::WriteMemory<float>(getAbsoluteAddress(libName, RIGHTLEG_2), 0.15f * MultiplyValue);
 
-    pthread_exit(nullptr);
+        // Спим 1 секунду перед следующим чтением файла
+        sleep(1);
+    }
+
     return nullptr;
 }
 
