@@ -1,65 +1,116 @@
 #include <iostream>
-#include <cstdio>
+#include <fstream>
+#include <string>
 #include <unistd.h>
 #include <pthread.h>
 
-// Подключаем хукер (например, Dobby)
-#include "dobby.h" 
+using namespace std;
+
 #include "Utils.h"
 
+// HIT BOXES (find string - PedModelInfo.cpp line: 85)
+#if defined(__aarch64__)
+    uintptr_t HEAD = 0x14247F8 ;
+    uintptr_t TORSO_1 = HEAD + 0x20;
+    uintptr_t TORSO_2 = TORSO_1 + 0x20;
+    uintptr_t MID = TORSO_2 + 0x20;
+    uintptr_t LEFTARM = MID + 0x20;
+    uintptr_t RIGHTARM = LEFTARM + 0x20;
+    uintptr_t LEFTLEG_1 = RIGHTARM + 0x20;
+    uintptr_t RIGHTLEG_1 = LEFTLEG_1 + 0x20;
+    uintptr_t LEFTLEG_2 = RIGHTLEG_1 + 0x20;
+    uintptr_t RIGHTLEG_2 = LEFTLEG_2 + 0x20;
+#else
+    uintptr_t HEAD = 0xD31C88;
+    uintptr_t TORSO_1 = HEAD + 0x18;
+    uintptr_t TORSO_2 = TORSO_1 + 0x18;
+    uintptr_t MID = TORSO_2 + 0x18;
+    uintptr_t LEFTARM = MID + 0x18;
+    uintptr_t RIGHTARM = LEFTARM + 0x18;
+    uintptr_t LEFTLEG_1 = RIGHTARM + 0x18;
+    uintptr_t RIGHTLEG_1 = LEFTLEG_1 + 0x18;
+    uintptr_t LEFTLEG_2 = RIGHTLEG_1 + 0x18;
+    uintptr_t RIGHTLEG_2 = LEFTLEG_2 + 0x18;
+#endif
+
 #define libName "libblackrussia-client.so"
-const char* filePath = "/storage/emulated/0/Android/data/com.br.top/files/Hitbox_Size.txt";
 
-// Переменная, где ВСЕГДА лежит актуальный размер из файла
-float globalHitboxSize = 1.0f;
+// Пути к конфигурационным файлам
+const string cmd_path = "/storage/emulated/0/Nonerai/Modules/control_signals/hitbox_cmd.txt";
+const string cfg_path = "/storage/emulated/0/Nonerai/Modules/control_signals/cfg.txt";
 
-// Смещение функции обновления кастомных калибров/костей педа (примерное, зависит от версии)
-// Тебе нужно будет найти точный оффсет функции типа SetupBones или СPed::Update в IDA/Gidra
-uintptr_t fnUpdateScaleOffset = 0x3A4B5C; 
-
-// Указатель на оригинальную функцию игры
-void (*orig_UpdateScale)(void* instance, float x, float y, float z);
-
-// Наша кастомная функция, которая подменяет размеры
-void hook_UpdateScale(void* instance, float x, float y, float z) {
-    // Вместо оригинальных x, y, z подставляем умноженные на наш globalHitboxSize
-    float newX = x * globalHitboxSize;
-    float newY = y * globalHitboxSize;
-    float newZ = z * globalHitboxSize;
-
-    // Вызываем оригинальную функцию уже с нашими «раздутыми» размерами
-    orig_UpdateScale(instance, newX, newY, newZ);
+// Функция для чтения команды (START/STOP)
+string readCommand(const string& path) {
+    ifstream file(path);
+    if (!file.is_open()) return "STOP"; // Если файл не найден, по умолчанию выключаем
+    string cmd;
+    if (file >> cmd) {
+        return cmd;
+    }
+    return "STOP";
 }
 
-// Поток, который просто спокойно читает файл раз в полсекунды
-void *file_reader_thread(void *) {
-    while (true) {
-        float size = 1.0f;
-        FILE* file = fopen(filePath, "r");
-        if (file) {
-            fscanf(file, "%f", &size);
-            fclose(file);
-        }
-        // Обновляем глобальную переменную — хук сразу подхватит её в следующем кадре
-        globalHitboxSize = size; 
-        
-        usleep(500000); // 0.5 сек задержка
+// Функция для чтения множителя (1 - 5)
+float readMultiplier(const string& path, float default_val) {
+    ifstream file(path);
+    if (!file.is_open()) return default_val;
+    float val;
+    if (file >> val) {
+        return val;
     }
-    return nullptr;
+    return default_val;
 }
 
 void *main_thread(void *) {
     do { sleep(1); } while (!isLibraryLoaded(libName));
 
-    uintptr_t libBase = getAbsoluteAddress(libName, 0);
+    // Получаем абсолютные адреса один раз при запуске для экономии ресурсов
+    uintptr_t addr_HEAD = getAbsoluteAddress(libName, HEAD);
+    uintptr_t addr_TORSO_1 = getAbsoluteAddress(libName, TORSO_1);
+    uintptr_t addr_TORSO_2 = getAbsoluteAddress(libName, TORSO_2);
+    uintptr_t addr_MID = getAbsoluteAddress(libName, MID);
+    uintptr_t addr_LEFTARM = getAbsoluteAddress(libName, LEFTARM);
+    uintptr_t addr_RIGHTARM = getAbsoluteAddress(libName, RIGHTARM);
+    uintptr_t addr_LEFTLEG_1 = getAbsoluteAddress(libName, LEFTLEG_1);
+    uintptr_t addr_RIGHTLEG_1 = getAbsoluteAddress(libName, RIGHTLEG_1);
+    uintptr_t addr_LEFTLEG_2 = getAbsoluteAddress(libName, LEFTLEG_2);
+    uintptr_t addr_RIGHTLEG_2 = getAbsoluteAddress(libName, RIGHTLEG_2);
 
-    // Ставим хук на функцию отрисовки/обновления масштаба костей
-    DobbyHook((void*)(libBase + fnUpdateScaleOffset), (void*)hook_UpdateScale, (void**)&orig_UpdateScale);
+    float last_applied_multiplier = -1.0f; // Хранит предыдущее примененное значение
 
-    // Запускаем фоновый поток для чтения текстового файла
-    pthread_t threadId;
-    pthread_create(&threadId, NULL, file_reader_thread, NULL);
+    while (true) {
+        // Задержка ~8 кадров при 60 FPS (133 000 микросекунд)
+        usleep(133000);
 
+        string cmd = readCommand(cmd_path);
+        float target_multiplier = 1.0f; // По умолчанию стандартные хитбоксы (множитель 1)
+
+        if (cmd == "START") {
+            // Читаем значение из cfg.txt, если файла нет или ошибка — ставим дефолтное 4.0f
+            target_multiplier = readMultiplier(cfg_path, 4.0f);
+        } else {
+            // Если STOP или файл недоступен — возвращаем стандартный размер (1.0f)
+            target_multiplier = 1.0f;
+        }
+
+        // Записываем в память только если значение изменилось
+        if (target_multiplier != last_applied_multiplier) {
+            Utils::WriteMemory<float>(addr_HEAD, 0.15f * target_multiplier);
+            Utils::WriteMemory<float>(addr_TORSO_1, 0.2f * target_multiplier);
+            Utils::WriteMemory<float>(addr_TORSO_2, 0.25f * target_multiplier);
+            Utils::WriteMemory<float>(addr_MID, 0.25f * target_multiplier);
+            Utils::WriteMemory<float>(addr_LEFTARM, 0.25f * target_multiplier);
+            Utils::WriteMemory<float>(addr_RIGHTARM, 0.16f * target_multiplier);
+            Utils::WriteMemory<float>(addr_LEFTLEG_1, 0.15f * target_multiplier);
+            Utils::WriteMemory<float>(addr_RIGHTLEG_1, 0.15f * target_multiplier);
+            Utils::WriteMemory<float>(addr_LEFTLEG_2, 0.15f * target_multiplier);
+            Utils::WriteMemory<float>(addr_RIGHTLEG_2, 0.15f * target_multiplier);
+
+            last_applied_multiplier = target_multiplier;
+        }
+    }
+
+    pthread_exit(nullptr);
     return nullptr;
 }
 
