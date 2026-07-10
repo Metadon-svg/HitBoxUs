@@ -1,78 +1,69 @@
 #include <iostream>
-#include <string>
 #include <pthread.h>
-#include <jni.h>
-#include "Utils.h"
+#include <unistd.h>
+#include <fstream>
+#include <sys/mman.h>
+#include "Utils.h" // Твои утилиты для поиска базового адреса
 
-// HIT BOXES для aarch64
-uintptr_t HEAD = 0x14247F8 ;
-uintptr_t TORSO_1 = HEAD + 0x20;
-uintptr_t TORSO_2 = TORSO_1 + 0x20;
-uintptr_t MID = TORSO_2 + 0x20;
-uintptr_t LEFTARM = MID + 0x20;
-uintptr_t RIGHTARM = LEFTARM + 0x20;
-uintptr_t LEFTLEG_1 = RIGHTARM + 0x20;
-uintptr_t RIGHTLEG_1 = LEFTLEG_1 + 0x20;
-uintptr_t LEFTLEG_2 = RIGHTLEG_1 + 0x20;
-uintptr_t RIGHTLEG_2 = LEFTLEG_2 + 0x20;
+// Указываем имя целевого модуля (например, "libblackrussia-client.so")
+const char* libName = "libblackrussia-client.so"; 
 
-#define libName "libblackrussia-client.so"
+// Путь к файлу настроек на внутренней памяти
+const char* configPath = "/sdcard/Download/hitbox_config.txt"; 
 
-float currentMultiplier = 4.0f;
+// Твой целевой оффсет (убедись, что он актуален для новой библиотеки)
+uintptr_t HEAD_OFFSET = 0x14247F8;
 
-void ApplyHitboxes(float mult) {
-    currentMultiplier = mult;
-    Utils::WriteMemory<float>(getAbsoluteAddress(libName, HEAD), 0.15f * mult);
-    Utils::WriteMemory<float>(getAbsoluteAddress(libName, TORSO_1), 0.2f * mult);
-    Utils::WriteMemory<float>(getAbsoluteAddress(libName, TORSO_2), 0.25f * mult);
-    Utils::WriteMemory<float>(getAbsoluteAddress(libName, MID), 0.25f * mult);
-    Utils::WriteMemory<float>(getAbsoluteAddress(libName, LEFTARM), 0.25f * mult);
-    Utils::WriteMemory<float>(getAbsoluteAddress(libName, RIGHTARM), 0.16f * mult);
-    Utils::WriteMemory<float>(getAbsoluteAddress(libName, LEFTLEG_1), 0.15f * mult);
-    Utils::WriteMemory<float>(getAbsoluteAddress(libName, RIGHTLEG_1), 0.15f * mult);
-    Utils::WriteMemory<float>(getAbsoluteAddress(libName, LEFTLEG_2), 0.15f * mult);
-    Utils::WriteMemory<float>(getAbsoluteAddress(libName, RIGHTLEG_2), 0.15f * mult);
+// Функция безопасной записи в защищенную память
+void WriteFloat(uintptr_t address, float value) {
+    size_t pageSize = sysconf(_SC_PAGESIZE);
+    uintptr_t pageStart = address & ~(pageSize - 1);
+    
+    // Снимаем защиту страницы памяти (PROT_WRITE)
+    mprotect((void*)pageStart, pageSize, PROT_READ | PROT_WRITE | PROT_EXEC);
+    
+    // Перезаписываем значение
+    *(float*)address = value;
 }
 
-typedef void (*SendChatFn)(JNIEnv* env, jobject thiz, jstring msg);
-SendChatFn sendChat = nullptr;
-
-void SendChatMessage(JNIEnv* env, jobject thiz, const char* text) {
-    if (sendChat) {
-        jstring jmsg = env->NewStringUTF(text);
-        sendChat(env, thiz, jmsg);
-        env->DeleteLocalRef(jmsg);
+// Фоновый поток для отслеживания изменений в файле
+void *monitor_thread(void *) {
+    // Ждем, пока целевой модуль загрузится в память процесса
+    while (!Utils::isLibraryLoaded(libName)) {
+        sleep(1);
     }
-}
 
-void ProcessChatCommand(JNIEnv* env, jobject thiz, const char* message) {
-    std::string msg(message);
-    if (msg.rfind("/sethb ", 0) == 0) {
-        try {
-            float newVal = std::stof(msg.substr(7));
-            if (newVal > 0 && newVal <= 20) {
-                ApplyHitboxes(newVal);
-                char buf[128];
-                snprintf(buf, sizeof(buf), "Хитбокс увеличен в %.0fx", newVal);
-                SendChatMessage(env, thiz, buf);
+    // Получаем базовый адрес загруженного модуля
+    uintptr_t libBase = Utils::get_base_address(libName);
+    float last_value = 1.0f; // Начальное значение для сравнения
+
+    // Цикл мониторинга файла
+    while (true) {
+        std::ifstream configFile(configPath);
+        
+        if (configFile.is_open()) {
+            float new_value;
+            if (configFile >> new_value) {
+                // Если значение в текстовом файле изменилось
+                if (new_value != last_value) {
+                    last_value = new_value;
+                    
+                    // Вычисляем точный адрес и пишем туда float
+                    WriteFloat(libBase + HEAD_OFFSET, new_value);
+                }
             }
-        } catch (...) {}
+            configFile.close();
+        }
+        
+        // Интервал проверки файла (1 секунда), чтобы не перегружать CPU
+        sleep(1); 
     }
-}
 
-void *main_thread(void *) {
-    do { sleep(1); } while (!isLibraryLoaded(libName));
-
-    uintptr_t libBase = (uintptr_t)getAbsoluteAddress(libName, 0);
-    sendChat = (SendChatFn)(libBase + 0x00ce4fe4);
-
-    ApplyHitboxes(currentMultiplier);
-
-    pthread_exit(nullptr);
     return nullptr;
 }
 
-__attribute__((constructor)) void _init(){
-    pthread_t ptid;
-    pthread_create(&ptid, NULL, main_thread, NULL);
+// Инициализатор, срабатывающий при загрузке этой .so в процесс
+__attribute__((constructor)) void init() {
+    pthread_t thread;
+    pthread_create(&thread, nullptr, monitor_thread, nullptr);
 }
