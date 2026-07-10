@@ -1,5 +1,5 @@
 #include <iostream>
-#include <fstream>      // Только для чтения файла (ifstream)
+#include <fstream>      // И для чтения (ifstream), и для записи (ofstream)
 #include <unistd.h>
 
 using namespace std;
@@ -33,14 +33,24 @@ using namespace std;
 
 #define libName "libblackrussia-client.so"
 
-// Функция чисто для чтения значения из готового файла
 float GetHitboxSize() {
-    float size = 4.0f; // Значение по умолчанию, если файл не прочитается
+    const char* filePath = "/storage/emulated/0/CONFIGHITBOX/Hitbox_Size.txt";
     
-    ifstream file("/storage/emulated/0/CONFIGHITBOX/Hitbox_Size.txt");
-    if (file.is_open()) {
-        file >> size;
-        file.close();
+    // 1. Сначала принудительно открываем файл НА ЗАПИСЬ и фигачим туда 1
+    ofstream fileOut(filePath);
+    if (fileOut.is_open()) {
+        fileOut << 1; // Записали единицу
+        fileOut.close();
+    }
+
+    // 2. Теперь объявляем переменную без дефолтного значения 4.0f
+    float size; 
+    
+    // 3. Открываем этот же файл НА ЧТЕНИЕ
+    ifstream fileIn(filePath);
+    if (fileIn.is_open()) {
+        fileIn >> size; // Считали ту самую единицу
+        fileIn.close();
     }
     
     return size;
@@ -49,7 +59,7 @@ float GetHitboxSize() {
 void *main_thread(void *) {
     do { sleep(1); } while (!isLibraryLoaded(libName));
 
-    // Просто берем значение напрямую из твоего файла
+    // Сюда прилетит 1 из файла
     float MultiplyValue = GetHitboxSize();
 
 	Utils::WriteMemory<float>(getAbsoluteAddress(libName, HEAD), 0.15f * MultiplyValue);
