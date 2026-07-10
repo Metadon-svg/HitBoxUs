@@ -1,6 +1,7 @@
 #include <iostream>
 #include <string>
 #include <pthread.h>
+#include <jni.h>
 #include "Utils.h"
 
 // HIT BOXES 
@@ -63,29 +64,26 @@ void SendChatMessage(JNIEnv* env, jobject thiz, const char* text) {
 void *main_thread(void *) {
     do { sleep(1); } while (!isLibraryLoaded(libName));
 
-    void* libBase = getAbsoluteAddress(libName, 0);
+    uintptr_t libBase = (uintptr_t)getAbsoluteAddress(libName, 0);
     sendChat = (SendChatFn)(libBase + 0x00ce4fe4);  // оффсет sendChatMessage
 
-    ApplyHitboxes(currentMultiplier);  // начальное
-
-    // TODO: Добавь hook на ввод чата здесь (Frida или native hook)
-    // Пример: в хуке sendChatMessage проверяй ProcessChatCommand
+    ApplyHitboxes(currentMultiplier);
 
     pthread_exit(nullptr);
     return nullptr;
 }
 
-// Обработчик команды
+// Обработчик команды (вызывай из хука)
 void ProcessChatCommand(JNIEnv* env, jobject thiz, const char* message) {
     std::string msg(message);
     if (msg.rfind("/sethb ", 0) == 0) {
         try {
             float newVal = std::stof(msg.substr(7));
-            if (newVal > 0 && newVal <= 20) {  // защита
+            if (newVal > 0 && newVal <= 20) {
                 ApplyHitboxes(newVal);
                 char buf[128];
                 snprintf(buf, sizeof(buf), "Хитбокс увеличен в %.0fx", newVal);
-                SendChatMessage(env, thiz, buf);  // зелёное сообщение (цвет зависит от игры)
+                SendChatMessage(env, thiz, buf);
             }
         } catch (...) {}
     }
