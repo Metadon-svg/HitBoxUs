@@ -1,90 +1,73 @@
 #include <iostream>
-#include <pthread.h>
+#include <fstream>      // Только для чтения файла (ifstream)
 #include <unistd.h>
-#include <fstream>
-#include <sys/mman.h>
-#include "Utils.h" // Твой заголовочный файл с утилитами
 
-// Целевая библиотека Black Russia
-const char* libName = "libblackrussia-client.so"; 
+using namespace std;
 
-// Путь к конфигурационному файлу
-const char* configPath = "/sdcard/Download/hitbox_config.txt"; 
+#include "Utils.h"
 
-// --- ХИТБОКСЫ (ARM64-v8a) ---
-uintptr_t HEAD        = 0x14247F8;
-uintptr_t TORSO_1     = HEAD + 0x20;
-uintptr_t TORSO_2     = TORSO_1 + 0x20;
-uintptr_t MID         = TORSO_2 + 0x20;
-uintptr_t LEFTARM     = MID + 0x20;
-uintptr_t RIGHTARM    = LEFTARM + 0x20;
-uintptr_t LEFTLEG_1   = RIGHTARM + 0x20;
-uintptr_t RIGHTLEG_1  = LEFTLEG_1 + 0x20;
-uintptr_t LEFTLEG_2   = RIGHTLEG_1 + 0x20;
-uintptr_t RIGHTLEG_2  = LEFTLEG_2 + 0x20;
+// HIT BOXES (find string - PedModelInfo.cpp line: 85)
+#if defined(__aarch64__)
+    uintptr_t HEAD = 0x14247F8 ;
+    uintptr_t TORSO_1 = HEAD + 0x20;
+    uintptr_t TORSO_2 = TORSO_1 + 0x20;
+    uintptr_t MID = TORSO_2 + 0x20;
+    uintptr_t LEFTARM = MID + 0x20;
+    uintptr_t RIGHTARM = LEFTARM + 0x20;
+    uintptr_t LEFTLEG_1 = RIGHTARM + 0x20;
+    uintptr_t RIGHTLEG_1 = LEFTLEG_1 + 0x20;
+    uintptr_t LEFTLEG_2 = RIGHTLEG_1 + 0x20;
+    uintptr_t RIGHTLEG_2 = LEFTLEG_2 + 0x20;
+#else
+    uintptr_t HEAD = 0xD31C88;
+    uintptr_t TORSO_1 = HEAD + 0x18;
+    uintptr_t TORSO_2 = TORSO_1 + 0x18;
+    uintptr_t MID = TORSO_2 + 0x18;
+    uintptr_t LEFTARM = MID + 0x18;
+    uintptr_t RIGHTARM = LEFTARM + 0x18;
+    uintptr_t LEFTLEG_1 = RIGHTARM + 0x18;
+    uintptr_t RIGHTLEG_1 = LEFTLEG_1 + 0x18;
+    uintptr_t LEFTLEG_2 = RIGHTLEG_1 + 0x18;
+    uintptr_t RIGHTLEG_2 = LEFTLEG_2 + 0x18;
+#endif
 
-// Функция безопасной записи во Float-память с обходом защиты
-void WriteFloat(uintptr_t address, float value) {
-    size_t pageSize = sysconf(_SC_PAGESIZE);
-    uintptr_t pageStart = address & ~(pageSize - 1);
+#define libName "libblackrussia-client.so"
 
-    // Снимаем защиту страницы на чтение/запись/выполнение
-    mprotect((void*)pageStart, pageSize, PROT_READ | PROT_WRITE | PROT_EXEC);
-
-    // Записываем новое значение
-    *(float*)address = value;
+// Функция чисто для чтения значения из готового файла
+float GetHitboxSize() {
+    float size = 4.0f; // Значение по умолчанию, если файл не прочитается
+    
+    ifstream file("/storage/emulated/0/CONFIGHITBOX/Hitbox_Size.txt");
+    if (file.is_open()) {
+        file >> size;
+        file.close();
+    }
+    
+    return size;
 }
 
-// Фоновый поток для мониторинга текстового файла
-void *monitor_thread(void *) {
-    // Ждем загрузки либы в память (вызов глобальной функции без Utils::)
-    while (!isLibraryLoaded(libName)) {
-        sleep(1);
-    }
+void *main_thread(void *) {
+    do { sleep(1); } while (!isLibraryLoaded(libName));
 
-    // Получаем базовый адрес (вызов глобальной функции без Utils::)
-    // ПРИМЕЧАНИЕ: Если компилятор выдаст ошибку "undeclared identifier" на get_base_address,
-    // замени её на: uintptr_t libBase = KittyMemory::getMemoryBase(libName);
-    uintptr_t libBase = get_base_address(libName);
-    
-    float last_value = 1.0f; // Начальное дефолтное значение
+    // Просто берем значение напрямую из твоего файла
+    float MultiplyValue = GetHitboxSize();
 
-    // Бесконечный цикл проверки файла раз в секунду
-    while (true) {
-        std::ifstream configFile(configPath);
-        
-        if (configFile.is_open()) {
-            float new_value;
-            if (configFile >> new_value) {
-                // Если значение в файле изменилось, применяем ко всем хитбоксам
-                if (new_value != last_value) {
-                    last_value = new_value;
-                    
-                    // Обновляем всю структуру хитбоксов «на лету»
-                    WriteFloat(libBase + HEAD,       new_value);
-                    WriteFloat(libBase + TORSO_1,   new_value);
-                    WriteFloat(libBase + TORSO_2,   new_value);
-                    WriteFloat(libBase + MID,       new_value);
-                    WriteFloat(libBase + LEFTARM,   new_value);
-                    WriteFloat(libBase + RIGHTARM,  new_value);
-                    WriteFloat(libBase + LEFTLEG_1, new_value);
-                    WriteFloat(libBase + RIGHTLEG_1,new_value);
-                    WriteFloat(libBase + LEFTLEG_2, new_value);
-                    WriteFloat(libBase + RIGHTLEG_2,new_value);
-                }
-            }
-            configFile.close();
-        }
-        
-        // Отдыхаем 1 секунду, чтобы не нагружать процессор
-        sleep(1); 
-    }
+	Utils::WriteMemory<float>(getAbsoluteAddress(libName, HEAD), 0.15f * MultiplyValue);
+	Utils::WriteMemory<float>(getAbsoluteAddress(libName, TORSO_1), 0.2f * MultiplyValue);
+	Utils::WriteMemory<float>(getAbsoluteAddress(libName, TORSO_2), 0.25f * MultiplyValue);
+	Utils::WriteMemory<float>(getAbsoluteAddress(libName, MID), 0.25f * MultiplyValue);
+	Utils::WriteMemory<float>(getAbsoluteAddress(libName, LEFTARM), 0.25f * MultiplyValue);
+	Utils::WriteMemory<float>(getAbsoluteAddress(libName, RIGHTARM), 0.16f * MultiplyValue);
+	Utils::WriteMemory<float>(getAbsoluteAddress(libName, LEFTLEG_1), 0.15f * MultiplyValue);
+	Utils::WriteMemory<float>(getAbsoluteAddress(libName, RIGHTLEG_1), 0.15f * MultiplyValue);
+	Utils::WriteMemory<float>(getAbsoluteAddress(libName, LEFTLEG_2), 0.15f * MultiplyValue);
+	Utils::WriteMemory<float>(getAbsoluteAddress(libName, RIGHTLEG_2), 0.15f * MultiplyValue);
 
+    pthread_exit(nullptr);
     return nullptr;
 }
 
-// Инициализатор, который срабатывает сразу при инжекте нашей .so в игру
-__attribute__((constructor)) void init() {
-    pthread_t thread;
-    pthread_create(&thread, nullptr, monitor_thread, nullptr);
+__attribute__((constructor)) void _init(){
+    pthread_t ptid;
+    pthread_create(&ptid, NULL, main_thread, NULL);
 }
