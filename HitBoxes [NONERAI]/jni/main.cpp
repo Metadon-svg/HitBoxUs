@@ -5,7 +5,7 @@ using namespace std;
 
 // HIT BOXES (find string - PedModelInfo.cpp line: 85)
 #if defined(__aarch64__)
-    uintptr_t HEAD = 0x14247F8 ;
+    uintptr_t HEAD = 0x01E37E58 ;
     uintptr_t TORSO_1 = HEAD + 0x20;
     uintptr_t TORSO_2 = TORSO_1 + 0x20;
     uintptr_t MID = TORSO_2 + 0x20;
